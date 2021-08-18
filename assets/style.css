@@ -1,0 +1,87 @@
+.header-title {
+  font-size: 48px;
+  text-align: center;
+  color: white;
+  margin-bottom:0px;
+}
+.header-row{
+    background-color: #2b2b2b;
+}
+.header-button{
+  font-size: 30px;
+  text-align: center;
+  color: white;
+}
+.graph-wrapper{
+border: 10px solid #2b2b2b;
+padding:10px;
+margin:10px;
+}
+.target-wrapper{
+ padding:2px;
+}
+.target-wrapper label{
+    margin: 8px 0 5px 0;
+}
+
+.button-custom{
+    min-width:100px;
+    margin:10px;
+}
+
+#output-update-parameters{
+    font-size:7px;
+}
+
+.square-indicator-false{
+  width:25px;
+  height:25px;
+  background-color:red;
+  display:inline-block;
+  margin:3px;
+  border: 3px solid #2b2b2b;
+}
+.square-indicator-true{
+  width:25px;
+  height:25px;
+  background-color:green;
+  display:inline-block;
+  margin:3px;
+  border: 3px solid #2b2b2b;
+}
+
+#input-start{
+  margin: 0px 10px;
+  width: 100px;
+}
+#button-start{
+  margin-bottom:0px;
+}
+#countdown-time{
+  margin-top:0px;
+  font-size:25px;
+  font-weight:bold;
+}
+#time-radio{
+  margin: 0px 20px 2px 20px;
+}
+#time-radio label{
+  margin:0px 4px;
+  line-height: 20px;
+}
+#time-radio label input{
+  margin:0px 4px;
+  line-height: 20px;
+  vertical-align: center;
+}
+.modebar-container{
+top:-15px !important;
+}
+.landing-text{
+  font-size:30px;
+  font-weight:bold;
+  color:#2b2b2b;
+}
+.landing-wrapper{
+  margin-top:50px;
+}
