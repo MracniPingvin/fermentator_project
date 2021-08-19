@@ -13,6 +13,7 @@ import time
 class Graph_page:
     def __init__(self, app):
         self.app = app
+        #self.fermentor = Fermentor(serial_port_name='/dev/ttyACM0')
         self.fermentor = Fermentor()
         
         self.auto_scale = True
@@ -164,7 +165,7 @@ class Graph_page:
                 temperature_hysteresis = float(temperature_hysteresis)
                 humidity_target = float(humidity_target)
                 humidity_hysteresis = float(humidity_hysteresis)
-                if temperature_target + temperature_hysteresis > 100:
+                if temperature_target + temperature_hysteresis > 95:
                     return "TOO HOT TO HANDLE!"
                 if temperature_target - temperature_hysteresis < 0:
                     return "TOO COLD TO HANDLE"
@@ -351,7 +352,6 @@ class Graph_page:
                       State('humidity', 'figure'),
                       )
         def update_graphs(n, time_radio, figure_temperature, figure_humidity):
-            
             time_radio = time_radio.split()
             if time_radio[1] == "min":
                 self.time_delta = datetime.timedelta(minutes=int(time_radio[0]))
@@ -363,7 +363,6 @@ class Graph_page:
                 self.time_delta = datetime.timedelta(days=31 * int(time_radio[0]))
             if time_radio[1] == "disable":
                 self.auto_scale = False
-
             else:
                 self.auto_scale = True
                 self.time_offset = self.time_delta / 5
@@ -438,8 +437,6 @@ class Graph_page:
                 message = "start|time|" + str(n_minutes)
                 self.fermentor.send_queue.put(message)
                 return message
-            else:
-                self.fermentor.measurements=[]
             return ""
             
         @self.app.callback(
