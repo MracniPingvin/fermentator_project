@@ -79,6 +79,7 @@ class Fermentor():
             "time": lambda x: x
         }
 
+        self.measurements_unsaved = []
         self.measurements = []
 
         self.sender_thread = None
@@ -86,7 +87,9 @@ class Fermentor():
         self.io_thread = None
         self.io_active = False
         self.receiver_serial = None
-        self.count = 0
+        self.measurement_unsaved_count = 0
+        self.measurement_unsaved_limit = 100
+        self.save_every_nth_measurement = 5
         self.parse_queue = queue.Queue()
         self.send_queue = queue.Queue()
         self.data_lock = threading.Lock()
@@ -263,7 +266,12 @@ class Fermentor():
                     found = True
             if not found:
                 print("UNKNOWN KEY: ", key)
-        self.measurements.append(data_block)
+        self.measurements_unsaved.append(data_block)
+        self.measurement_unsaved_count += 1
+        print(self.measurement_unsaved_count)
+        if self.measurement_unsaved_count == self.measurement_unsaved_limit:
+            self.update_database(self.database_path, self.save_every_nth_measurement)
+            self.measurement_unsaved_count = 0
         return data_block
         
     def parse_function_info(self, message_list):
@@ -271,8 +279,6 @@ class Fermentor():
     def parse_function_time(self, timestamp):
         t = datetime.datetime.fromisoformat(timestamp)
         return t
-
-
 
     def load_database(self, path):
         try:
@@ -287,14 +293,17 @@ class Fermentor():
         except IOError:
             print("Database file missing")
 
-    def update_database(self, path):
+    def update_database(self, path, every_nth_measurement=1):
         database_exists = os.path.isfile(path)
         with open(path, 'a', encoding='utf8', newline='') as output_file:
-            fc = csv.DictWriter(output_file, fieldnames=self.measurements[0].keys())
+            fc = csv.DictWriter(output_file, fieldnames=self.measurements_unsaved[0].keys())
             if not database_exists:
                 fc.writeheader()
-            for row in self.measurements:
-                fc.writerow(self.process_row_before_saving(row))
+            for count, row in enumerate(self.measurements_unsaved):
+                if count % every_nth_measurement == 0:
+                    fc.writerow(self.process_row_before_saving(row))
+                    self.measurements.append(row)
+        self.measurements_unsaved = []
 
     def process_row_before_saving(self, row):
         data_block = self.empty_data_block.copy()

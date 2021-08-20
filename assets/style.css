@@ -64,6 +64,7 @@ margin:10px;
 }
 #time-radio{
   margin: 0px 20px 2px 20px;
+  display:inline-block;
 }
 #time-radio label{
   margin:0px 4px;
@@ -84,4 +85,8 @@ top:-15px !important;
 }
 .landing-wrapper{
   margin-top:50px;
+}
+#current-time{
+  margin-left: 5px;
+  display: inline-block;
 }

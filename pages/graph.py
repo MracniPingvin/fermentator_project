@@ -9,15 +9,18 @@ from scripts.fermentor import Fermentor
 from snippets import header
 import datetime
 import time
+import cProfile, pstats
+import pprint
 
 class Graph_page:
     def __init__(self, app):
+        self.profiler = cProfile.Profile()
         self.app = app
         #self.fermentor = Fermentor(serial_port_name='/dev/ttyACM0')
         self.fermentor = Fermentor()
         
         self.auto_scale = True
-        self.update_shapes = False
+        self.update_shapes = True
         self.config = {
             'modeBarButtonsToRemove': ['toggleSpikelines', 'hoverCompareCartesian', 'lasso2d', 'hoverClosestCartesian', 'autoScale2d', 'resetScale2d'],
             'displaylogo': False,
@@ -29,16 +32,17 @@ class Graph_page:
         
         self.temperature_range_tolerance = 5
         self.temperature_ranges = None
-        self.temperature_range_y_axis = [0, 110]
+        self.range_y_temperature = [0, 110]
         self.temperature_columns = [x for x in self.fermentor.in_names["temperature"]]
         self.temperature_delta = 5
         self.humidity_range_tolerance = 5
         self.humidity_ranges = None
-        self.humidity_range_y_axis = [0, 100]
+        self.range_y_humidity = [0, 100]
         self.humidity_columns = [x for x in self.fermentor.in_names["humidity"]]
         self.humidity_delta = 5
         self.time_delta = datetime.timedelta(minutes=10, seconds=0)
         self.time_offset = self.time_delta/5
+        self.range_x_time = [datetime.datetime.utcnow(), datetime.datetime.utcnow()-self.time_delta]
         
         self.init_ranges()
         data = self.init_data()
@@ -64,76 +68,105 @@ class Graph_page:
                                    target_humid + hyst_humid + self.humidity_range_tolerance]
 
     def filter_results(self, df):
+        #df = df.iloc[::5] %choose every fifth element
         max_time = df["time"].max()
-        cutoff_time = max_time - self.time_delta + self.time_offset
+        cutoff_time = max_time - self.time_delta
         return df[df["time"] > cutoff_time]
 
+    def draw_horizontal_band(self, fig, yrange=(0, 100), fillcolor="red", opacity=0.2):
+        fig['layout']['shapes'].append(
+            {'fillcolor': fillcolor,
+             'line': {'width': 0},
+             'opacity': opacity,
+             'type': 'rect',
+             'x0': 0,
+             'x1': 1,
+             'xref': 'x domain',
+             'y0': yrange[0],
+             'y1': yrange[1],
+             'yref': 'y'}
+        )
+        return fig
     def draw_acceptable_ranges(self, fig, ranges):
         # input: range in format [lower yellow, lower green, high green, high yellow]
-        fig['layout']['shapes'] = tuple() # delete current rectangles
-        fig.add_hrect(
-            y0=-100, y1=ranges[0], line_width=0,
-            fillcolor="red", opacity=0.2)
-        fig.add_hrect(
-            y0=ranges[0], y1=ranges[1], line_width=0,
-            fillcolor="yellow", opacity=0.2)
-        fig.add_hrect(
-            y0=ranges[1], y1=ranges[2], line_width=0,
-            fillcolor="green", opacity=0.2)
-        fig.add_hrect(
-            y0=ranges[2], y1=ranges[3], line_width=0,
-            fillcolor="yellow", opacity=0.2)
-        fig.add_hrect(
-            y0=ranges[3], y1=200, line_width=0,
-            fillcolor="red", opacity=0.2)
+        fig['layout']['shapes'] = [] # delete current rectangles
+        fig = self.draw_horizontal_band(fig, (-100, ranges[0]), "red", 0.2)
+        fig = self.draw_horizontal_band(fig, (ranges[0], ranges[1]), "yellow", 0.2)
+        fig = self.draw_horizontal_band(fig, (ranges[1], ranges[2]), "green", 0.2)
+        fig = self.draw_horizontal_band(fig, (ranges[2], ranges[3]), "yellow", 0.2)
+        fig = self.draw_horizontal_band(fig, (ranges[3], 200), "red", 0.2)
+        # fig.add_hrect(
+        #     y0=-100, y1=ranges[0], line_width=0,
+        #     fillcolor="red", opacity=0.2)
+        # fig.add_hrect(
+        #     y0=ranges[0], y1=ranges[1], line_width=0,
+        #     fillcolor="yellow", opacity=0.2)
+        # fig.add_hrect(
+        #     y0=ranges[1], y1=ranges[2], line_width=0,
+        #     fillcolor="green", opacity=0.2)
+        # fig.add_hrect(
+        #     y0=ranges[2], y1=ranges[3], line_width=0,
+        #     fillcolor="yellow", opacity=0.2)
+        # fig.add_hrect(
+        #     y0=ranges[3], y1=200, line_width=0,
+        #     fillcolor="red", opacity=0.2)
         # fig.add_hline(y=(ranges[2]-ranges[1])/2, line_width=3, line_color="red")
         return fig
         
     def init_graph(self, df, columns, ranges=None, dash=None, color=None, y_axis_range=None):
         fig = go.Figure()
         fig.update_layout(uirevision=True)
-        if ranges:
-            fig = self.draw_acceptable_ranges(fig, ranges)
         fig.update_xaxes(autorange=False)
         fig.update_layout(yaxis_range=y_axis_range, margin={'t': 10, 'b': 10}, height=400)
-        fig = self.draw_lines(fig, df, columns, dash, color)
         return fig
+    def draw_line(self, fig, x, y, name='default', mode='lines+markers', opacity = 1, type ='scatter', color='red', dash='solid'):
+        fig['data'].append({
+            'line': {'color': color,
+                    'dash': dash},
+            'mode': mode,
+            'name': name,
+            'opacity': opacity,
+            'x': x,
+            'y': y,
+            'type': 'scatter'
+         })
 
     def draw_lines(self, fig, df, columns, dash=None, color=None):
         if self.time_delta < datetime.timedelta(minutes=11):
             mode = 'lines+markers'
         else:
             mode = 'lines'
-        fig.data = [] # delete current lines
+        fig['data'] = [] # delete current lines
         for i in range(len(columns)):
-            fig.add_trace(
-                go.Scatter(x=df['time'],
-                           y=df[columns[i]],
-                           mode=mode,
-                           opacity=0.3,
-                           line=dict(dash=dash[i],
-                                     color=color[i],),
-                           name=self.trace_names[i]),
-
-                )
+            neki=go.Scatter(x=df['time'],
+                       y=df[columns[i]],
+                       mode=mode,
+                       opacity=0.3,
+                       line=dict(dash=dash[i],
+                                 color=color[i], ),
+                       name=self.trace_names[i]
+            ).to_plotly_json()
+            fig['data'].append(neki)
+            pass
         avg_df = df[columns].mean(axis=1)
-        fig.add_trace(
-                go.Scatter(x=df['time'],
-                           y=avg_df,
-                           mode=mode,
-                           opacity=1,
-                           line=dict(dash='solid',
-                                     color=color[0],),
-                           name="average"),
-                )
+        fig['data'].append(
+            go.Scatter(x=df['time'],
+                       y=avg_df,
+                       mode=mode,
+                       opacity=1,
+                       line=dict(dash='solid',
+                                 color=color[0], ),
+                       name="average"
+            ).to_plotly_json(),
+        )
         return fig
 
     def init_data(self):
-        df = pd.DataFrame(self.fermentor.measurements.copy())
+        df = pd.DataFrame(self.fermentor.measurements.copy() + self.fermentor.measurements_unsaved.copy())
         if df.empty:
             df = pd.DataFrame([self.fermentor.create_empty_data_block()])
             df['time'] = datetime.datetime.now()
-            df = self.filter_results(df)
+        df = self.filter_results(df)
         return df
 
     def init_graphs(self, data):
@@ -141,12 +174,12 @@ class Graph_page:
                                               color=self.colors_temperature,
                                               dash=self.dashes,
                                               ranges=self.temperature_ranges,
-                                              y_axis_range=self.temperature_range_y_axis)
+                                              y_axis_range=self.range_y_temperature)
         figure_humidity = self.init_graph(data, self.humidity_columns,
                                            color=self.colors_humidity,
                                            dash=self.dashes,
                                            ranges=self.humidity_ranges,
-                                           y_axis_range=self.humidity_range_y_axis)
+                                           y_axis_range=self.range_y_humidity)
         return figure_temperature, figure_humidity
     
     def update_indicator_row(self, states):
@@ -190,6 +223,8 @@ class Graph_page:
                 dbc.Row([
                     dbc.Col([
                         html.Div([
+                            dbc.Label("Last update:"),
+                            dbc.Label("Never", id="current-time"),
                             dcc.RadioItems(
                                 id="time-radio",
                                 options=[
@@ -225,7 +260,7 @@ class Graph_page:
                         ),
                         dcc.Interval(
                             id='interval-component',
-                            interval=3*1000, # in milliseconds
+                            interval=5*1000, # in milliseconds
                             n_intervals=0
                         ),
                     ], lg=9, md=12),
@@ -343,6 +378,7 @@ class Graph_page:
                       Output('temperature', 'config'),
                       Output('humidity', 'config'),
                       Output('countdown-time', 'children'),
+                      Output('current-time', 'children'),
                       Output('heater-indicator-row','children'),
                       Output('fans-indicator-row','children'),
                       Output('humidifier-indicator-row', 'children'),
@@ -352,6 +388,7 @@ class Graph_page:
                       State('humidity', 'figure'),
                       )
         def update_graphs(n, time_radio, figure_temperature, figure_humidity):
+
             time_radio = time_radio.split()
             if time_radio[1] == "min":
                 self.time_delta = datetime.timedelta(minutes=int(time_radio[0]))
@@ -370,8 +407,8 @@ class Graph_page:
             data = self.init_data()
             
             #refresh lines
-            figure_temperature = go.Figure(figure_temperature)
-            figure_humidity = go.Figure(figure_humidity)
+            start = time.time()
+
             figure_temperature = self.draw_lines(figure_temperature,
                                                   data,
                                                   self.temperature_columns,
@@ -382,22 +419,23 @@ class Graph_page:
                                               self.humidity_columns,
                                               self.dashes,
                                               self.colors_humidity)
-            
+
             #handle all automatic scaling
             if self.auto_scale:
                 self.config['displayModeBar']=False
-                range_x_max = data["time"].max() + self.time_offset
-                range_x_min = range_x_max - self.time_delta
+                range_x_max_time = data["time"].max() + self.time_offset
+                range_x_min_time = range_x_max_time - self.time_delta
                 range_y_max_temperature = data[self.temperature_columns].max().max() + self.temperature_delta
                 range_y_min_temperature = data[self.temperature_columns].min().min() - self.temperature_delta
                 range_y_max_humidity = data[self.humidity_columns].max().max() + self.humidity_delta
                 range_y_min_humidity = data[self.humidity_columns].min().min() - self.humidity_delta
-                self.humidity_range_y_axis = [range_y_min_humidity, range_y_max_humidity]
-                self.temperature_range_y_axis = [range_y_min_temperature, range_y_max_temperature]
-                figure_humidity.update_xaxes(range=[range_x_min, range_x_max])
-                figure_humidity.update_yaxes(range=self.humidity_range_y_axis)
-                figure_temperature.update_xaxes(range=[range_x_min, range_x_max])
-                figure_temperature.update_yaxes(range=self.temperature_range_y_axis)
+                self.range_y_humidity = [range_y_min_humidity, range_y_max_humidity]
+                self.range_y_temperature = [range_y_min_temperature, range_y_max_temperature]
+                self.range_x_time = [range_x_min_time, range_x_max_time]
+                figure_humidity['layout']['xaxis']['range']=self.range_x_time
+                figure_humidity['layout']['yaxis']['range']=self.range_y_humidity
+                figure_temperature['layout']['xaxis']['range']=self.range_x_time
+                figure_temperature['layout']['yaxis']['range']=self.range_y_temperature
             else:
                 self.config['displayModeBar']=True
             
@@ -405,17 +443,21 @@ class Graph_page:
             if self.update_shapes:
                 figure_temperature = self.draw_acceptable_ranges(figure_temperature, self.temperature_ranges)
                 figure_humidity = self.draw_acceptable_ranges(figure_humidity, self.humidity_ranges)
+                self.update_shapes = False
             
-            #update countdown
+            #update times
             countdown_time = data[self.fermentor.in_names["time_left"][0]].iloc[-1]
             countdown_string = str(countdown_time)
+            current_time = data[self.fermentor.in_names["time"][0]].iloc[-1]
+            current_string = current_time.strftime("%Y-%m-%d %H:%M:%S")
             
             #update indicators
             heater_indicator_row = self.update_indicator_row(data[x].iloc[-1] for x in self.fermentor.in_names["heater"])
             fans_indicator_row = self.update_indicator_row(data[x].iloc[-1] for x in self.fermentor.in_names["fan"])
             humidifier_indicator_row = self.update_indicator_row(data[x].iloc[-1] for x in self.fermentor.in_names["moisturizer"])
-
-            return figure_temperature, figure_humidity, self.config, self.config, countdown_string, heater_indicator_row, fans_indicator_row, humidifier_indicator_row
+            end = time.time()
+            print(end - start)
+            return figure_temperature, figure_humidity, self.config, self.config, countdown_string, current_string, heater_indicator_row, fans_indicator_row, humidifier_indicator_row
 
         @self.app.callback(
             Output("none0", "children"),
