@@ -42,7 +42,8 @@ class Graph_page:
         self.humidity_delta = 5
         self.time_delta = datetime.timedelta(minutes=10, seconds=0)
         self.time_offset = self.time_delta/5
-        self.range_x_time = [datetime.datetime.utcnow(), datetime.datetime.utcnow()-self.time_delta]
+        self.range_x_time = [datetime.datetime.utcnow() - self.time_offset,
+                             datetime.datetime.utcnow() + self.time_offset - self.time_delta]
         
         self.init_ranges()
         data = self.init_data()
@@ -229,7 +230,7 @@ class Graph_page:
                                 id="time-radio",
                                 options=[
                                     {'label': '1min', 'value': '1 min'},
-                                    {'label': '10min', 'value': '5 min'},
+                                    {'label': '10min', 'value': '10 min'},
                                     {'label': '30min', 'value': '30 min'},
                                     {'label': '1h', 'value': '1 h'},
                                     {'label': '12h', 'value': '12 h'},
@@ -399,6 +400,7 @@ class Graph_page:
             if time_radio[1] == "mo":
                 self.time_delta = datetime.timedelta(days=31 * int(time_radio[0]))
             if time_radio[1] == "disable":
+                self.time_delta = datetime.timedelta(days=90)
                 self.auto_scale = False
             else:
                 self.auto_scale = True
