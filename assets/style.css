@@ -20,7 +20,7 @@ margin:10px;
 .target-wrapper{
  padding:2px;
 }
-.target-wrapper label{
+.target-wrapper-label{
     margin: 8px 0 5px 0;
 }
 
@@ -89,4 +89,19 @@ top:-15px !important;
 #current-time{
   margin-left: 5px;
   display: inline-block;
+}
+.parameter-input{
+    width:50px;
+}
+
+.parameter-output{
+    font-weight: 900;
+    margin-left: 20px;
+    font-size: 17px;
+}
+
+#current-state{
+  margin-top:0px;
+  font-size:25px;
+  font-weight:bold;
 }

@@ -194,27 +194,10 @@ class Graph_page:
     
     def update_parameters(self, n_clicks, temperature_target, temperature_hysteresis, humidity_target, humidity_hysteresis):
         if n_clicks:
-            try:
-                temperature_target = float(temperature_target)
-                temperature_hysteresis = float(temperature_hysteresis)
-                humidity_target = float(humidity_target)
-                humidity_hysteresis = float(humidity_hysteresis)
-                if temperature_target + temperature_hysteresis > 95:
-                    return "TOO HOT TO HANDLE!"
-                if temperature_target - temperature_hysteresis < 0:
-                    return "TOO COLD TO HANDLE"
-                if humidity_target + humidity_hysteresis > 100:
-                    return "TOO HUMID TO HANDLE!"
-                if humidity_target - humidity_hysteresis < 0:
-                    return "TOO DRY TO HANDLE"
-            except:
-                return "INVALID PARAMETERS!"
             self.fermentor.update_parameters(temperature_target, humidity_target, temperature_hysteresis, humidity_hysteresis)
-            message = self.fermentor.get_parameter_string()
-            self.fermentor.send_queue.put(message)
-            self.init_ranges()
-            self.update_shapes = True
-            return "PARAMETERS UPDATED!"
+            self.fermentor.send_parameters()
+        self.init_ranges()
+        self.update_shapes = True
         return ""
             
     def init_layout(self, figure_temperature, figure_humidity):
@@ -270,26 +253,34 @@ class Graph_page:
                             html.Div([
                                 dbc.Row([
                                     dbc.Col([
-                                        dbc.Label("Target temperature:"),
+                                        dbc.Label("Target temperature:", className="target-wrapper-label"),
                                         html.Br(),
-                                        dcc.Input(id='input-temperature-target', type='number', value='80'),
+                                        dcc.Input(id='input-temperature-target', className="parameter-input", type='number',
+                                                  value=str(self.fermentor.params["temperature"]["target"]["current"])),
+                                        dbc.Label("00", id='output-temperature-target', className="parameter-output"),
                                     ], className="text-center"),
                                     dbc.Col([
-                                        dbc.Label("Temperature hysteresis:"),
+                                        dbc.Label("Temperature hysteresis:", className="target-wrapper-label"),
                                         html.Br(),
-                                        dcc.Input(id='input-temperature-hysteresis', type='number', value='5'),
+                                        dcc.Input(id='input-temperature-hysteresis', className="parameter-input", type='number',
+                                                  value=str(self.fermentor.params["temperature"]["hysteresis"]["current"])),
+                                        dbc.Label("00", id='output-temperature-hysteresis', className="parameter-output"),
                                     ], className="text-center"),
                                 ]),
                                 dbc.Row([
                                     dbc.Col([
-                                        dbc.Label("Target humidity:"),
+                                        dbc.Label("Target humidity:", className="target-wrapper-label"),
                                         html.Br(),
-                                        dcc.Input(id='input-humidity-target', type='number', value='80'),
+                                        dcc.Input(id='input-humidity-target', className="parameter-input", type='number',
+                                                  value=str(self.fermentor.params["humidity"]["target"]["current"])),
+                                        dbc.Label("00", id='output-humidity-target', className="parameter-output"),
                                     ], className="text-center"),
                                     dbc.Col([
-                                        dbc.Label("Humidity hysteresis:"),
+                                        dbc.Label("Humidity hysteresis:", className="target-wrapper-label"),
                                         html.Br(),
-                                        dcc.Input(id='input-humidity-hysteresis', type='number', value='5'),
+                                        dcc.Input(id='input-humidity-hysteresis', className="parameter-input", type='number',
+                                                  value=str(self.fermentor.params["humidity"]["hysteresis"]["current"])),
+                                        dbc.Label("00", id='output-humidity-hysteresis', className="parameter-output"),
                                     ], className="text-center")
                                 ]),
                                 dbc.Row([
@@ -325,9 +316,14 @@ class Graph_page:
                                 ]),
                                 dbc.Row([
                                     dbc.Col([
-                                        dbc.Label("Time to finish:"),
+                                        dbc.Label("Time to finish:", className="target-wrapper-label"),
                                         html.Br(),
                                         dbc.Label("", id="countdown-time"),
+                                    ]),
+                                    dbc.Col([
+                                        dbc.Label("Current state:", className="target-wrapper-label"),
+                                        html.Br(),
+                                        dbc.Label("", id="current-state"),
                                     ])
                                 ], className="text-center"),
                             ], className="target-wrapper"),
@@ -383,6 +379,11 @@ class Graph_page:
                       Output('heater-indicator-row','children'),
                       Output('fans-indicator-row','children'),
                       Output('humidifier-indicator-row', 'children'),
+                      Output('output-temperature-target', 'children'),
+                      Output('output-temperature-hysteresis', 'children'),
+                      Output('output-humidity-target', 'children'),
+                      Output('output-humidity-hysteresis', 'children'),
+                      Output('current-state', 'children'),
                       Input('interval-component', 'n_intervals'),
                       Input('time-radio', 'value'),
                       State('temperature', 'figure'),
@@ -448,18 +449,25 @@ class Graph_page:
                 self.update_shapes = False
             
             #update times
-            countdown_time = data[self.fermentor.in_names["time_left"][0]].iloc[-1]
+            countdown_time = self.fermentor.current_data[self.fermentor.in_names["time_left"][0]]
             countdown_string = str(countdown_time)
-            current_time = data[self.fermentor.in_names["time"][0]].iloc[-1]
+            current_time = self.fermentor.current_data[self.fermentor.in_names["time"][0]]
             current_string = current_time.strftime("%Y-%m-%d %H:%M:%S")
             
             #update indicators
-            heater_indicator_row = self.update_indicator_row(data[x].iloc[-1] for x in self.fermentor.in_names["heater"])
-            fans_indicator_row = self.update_indicator_row(data[x].iloc[-1] for x in self.fermentor.in_names["fan"])
-            humidifier_indicator_row = self.update_indicator_row(data[x].iloc[-1] for x in self.fermentor.in_names["moisturizer"])
+            heater_indicator_row = self.update_indicator_row(self.fermentor.current_data[x] for x in self.fermentor.in_names["heater"])
+            fans_indicator_row = self.update_indicator_row(self.fermentor.current_data[x] for x in self.fermentor.in_names["fan"])
+            humidifier_indicator_row = self.update_indicator_row(self.fermentor.current_data[x]for x in self.fermentor.in_names["moisturizer"])
             end = time.time()
-            print(end - start)
-            return figure_temperature, figure_humidity, self.config, self.config, countdown_string, current_string, heater_indicator_row, fans_indicator_row, humidifier_indicator_row
+            return figure_temperature, figure_humidity, self.config, self.config, countdown_string, current_string, \
+                   heater_indicator_row, fans_indicator_row, humidifier_indicator_row, \
+                   self.fermentor.current_data[self.fermentor.in_names["temperature_target"][0]],\
+                   self.fermentor.current_data[self.fermentor.in_names["temperature_hysteresis"][0]],\
+                   self.fermentor.current_data[self.fermentor.in_names["humidity_target"][0]],\
+                   self.fermentor.current_data[self.fermentor.in_names["humidity_hysteresis"][0]],\
+                   self.fermentor.current_data[self.fermentor.in_names["state"][0]]
+
+
 
         @self.app.callback(
             Output("none0", "children"),
@@ -472,14 +480,7 @@ class Graph_page:
         )
         def button_start(n_clicks, n_minutes, temperature_target, temperature_hysteresis, humidity_target, humidity_hysteresis):
             if n_clicks:
-                try:
-                    int_minutes = int(n_minutes)
-                    if int_minutes < 0 or int_minutes > 200000:
-                        return ""
-                except:
-                    return ""
-                message = "start|time|" + str(n_minutes)
-                self.fermentor.send_queue.put(message)
+                message = self.fermentor.start_fermentation(n_minutes)
                 return message
             return ""
             
@@ -489,8 +490,7 @@ class Graph_page:
         )
         def button_stop(n_clicks):
             if n_clicks:
-                message = "stop\n"
-                self.fermentor.send_queue.put(message)
+                message = self.fermentor.stop_fermentation()
                 return message
             return ""
             
@@ -500,8 +500,7 @@ class Graph_page:
         )
         def button_pause(n_clicks):
             if n_clicks:
-                message = "pause\n"
-                self.fermentor.send_queue.put(message)
+                message = self.fermentor.pause_fermentation()
                 return message
             return ""
             
@@ -511,9 +510,7 @@ class Graph_page:
         )
         def button_resume(n_clicks):
             if n_clicks:
-                message = "resume\n"
-                self.fermentor.send_queue.put(message)
-                print(message)
+                message = self.fermentor.resume_fermentation()
                 return message
             return ""
 
