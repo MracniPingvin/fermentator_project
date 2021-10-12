@@ -72,15 +72,42 @@ void loop() {
 uint8_t rtos_init(uint16_t time_slice, uint16_t st_opravil){
   Serial.begin(9600);
   Serial.println("info|Initializing scheduler");
-  if(rtos_start(1, time_slice, st_opravil) != 0) return 1;
-  if(temp_humid(time_slice*st_opravil,2000,1,0) != 0) return 1;
-  if(serial_comunication(time_slice*st_opravil,2000,1,0) != 0) return 1;
-  if(serial_read(time_slice*st_opravil,2000,1,0) != 0) return 1;
-  if(on_condition_setup(time_slice*st_opravil,2000,1,0) != 0) return 1;
-  if(fans(time_slice*st_opravil,2000,1,0,false) != 0) return 1;
-  if(heater(time_slice*st_opravil,2000,1,0,false) != 0) return 1;
-  if(humidity(time_slice*st_opravil,2000,1,0,false) != 0) return 1;
-  if(stej_cas(time_slice*st_opravil,1000, 1, 0) != 0) return 1;
+  if(rtos_start(1, time_slice, st_opravil) != 0){
+    Serial.println("info|RtOS fail");
+    return 1;
+  }
+  if(temp_humid(time_slice*st_opravil,2000,1,0) != 0){
+    Serial.println("info|RtOS fail");
+    return 1;
+  }
+  if(serial_comunication(time_slice*st_opravil,2000,1,0) != 0){
+    Serial.println("info|Serial fail");
+    return 1;
+  }
+  if(serial_read(time_slice*st_opravil,2000,1,0) != 0){
+    Serial.println("info|Serial read fail");
+    return 1;
+  }
+  if(on_condition_setup(time_slice*st_opravil,2000,1,0) != 0){
+    Serial.println("info|on_condition fail");
+    return 1;
+  }
+  if(fans(time_slice*st_opravil,2000,1,0,false) != 0){
+    Serial.println("info|fans fail");
+    return 1;
+  }
+  if(heater(time_slice*st_opravil,2000,1,0,false) != 0){
+    Serial.println("info|heater fail");
+    return 1;
+  }
+  if(humidity(time_slice*st_opravil,2000,1,0,false) != 0){
+    Serial.println("info|humidity fail");
+    return 1;
+  }
+  if(stej_cas(time_slice*st_opravil,1000, 1, 0) != 0){
+    Serial.println("info|RtOS fail");
+    return 1;
+  }
   Serial.println("info|Initialization completed");
   Serial.println("info|Starting scheduler");
   return 0;
@@ -247,12 +274,12 @@ uint8_t serial_comunication(uint16_t cikel_ms, uint32_t perioda_ms, uint8_t init
     String fan3 = "f3|";
     String heat0 = "he0|";
     String moist0 = "mo0|";
-    String timeLeft = "left|";
-    String t_hyst = "tHys|";
-    String h_hyst = "hHys|";
-    String t_target = "tTar|";
-    String h_target = "hTar|";
-    String state = "state|";
+    String timeLeft = "tl|";
+    String t_hyst = "tH|";
+    String h_hyst = "hH|";
+    String t_target = "tT|";
+    String h_target = "hT|";
+    String state = "st|";
     String sep = "|";
 
   if(init_s == 1){
@@ -342,6 +369,7 @@ uint8_t serial_read(uint16_t cikel_ms, uint32_t perioda_ms, uint8_t init_s, uint
         }else{
           assign_values("none", "none", head);
         }
+        Serial.println("info|done");
     }
       stevec = 0;
     }else{
@@ -389,7 +417,18 @@ uint8_t on_condition_setup(uint16_t cikel_ms, uint32_t perioda_ms, uint8_t init_
         spodnja_meja_V = zelena_vlaga-histereza_vlaga;
 
         /*Histereza temperature*/
-        povprecna_temperatura = (temperatura1+temperatura2+temperatura3+temperatura4)/4.0;
+        if (isnan(temperatura1)) {
+          povprecna_temperatura = (temperatura2+temperatura3+temperatura4)/3.0;
+        }else if (isnan(temperatura2)){
+          povprecna_temperatura = (temperatura1+temperatura3+temperatura4)/3.0;
+        }else if (isnan(temperatura3)){
+          povprecna_temperatura = (temperatura1+temperatura2+temperatura4)/3.0;
+        }else if (isnan(temperatura4)){
+          povprecna_temperatura = (temperatura1+temperatura2+temperatura3)/3.0;
+        }else{
+          povprecna_temperatura = (temperatura1+temperatura2+temperatura3+temperatura4)/4.0;
+        }
+        
         if(povprecna_temperatura < trenutna_meja_T){
           trenutna_meja_T = zgornja_meja_T;
           on_heater = true;
@@ -399,7 +438,18 @@ uint8_t on_condition_setup(uint16_t cikel_ms, uint32_t perioda_ms, uint8_t init_
         }
 
         /*Histereza vlage*/
-        povprecna_vlaga = (vlaga1+vlaga2+vlaga3+vlaga4)/4.0;
+        if (isnan(vlaga1)) {
+          povprecna_vlaga = (vlaga2+vlaga3+vlaga4)/3.0;
+        }else if (isnan(vlaga2)){
+          povprecna_vlaga = (vlaga1+vlaga3+vlaga4)/3.0;
+        }else if (isnan(vlaga3)){
+          povprecna_vlaga = (vlaga1+vlaga2+vlaga4)/3.0;
+        }else if (isnan(vlaga4)){
+          povprecna_vlaga = (vlaga1+vlaga2+vlaga3)/3.0;
+        }else{
+          povprecna_vlaga = (vlaga1+vlaga2+vlaga3+vlaga4)/4.0;
+        }
+        
         if(povprecna_vlaga < trenutna_meja_V){
           trenutna_meja_V = zgornja_meja_V;
           on_humidity = true;

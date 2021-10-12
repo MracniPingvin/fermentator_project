@@ -192,10 +192,9 @@ class Graph_page:
                 elements.append(html.Div(className="square-indicator-false"))
         return elements
     
-    def update_parameters(self, n_clicks, temperature_target, temperature_hysteresis, humidity_target, humidity_hysteresis):
-        if n_clicks:
-            self.fermentor.update_parameters(temperature_target, humidity_target, temperature_hysteresis, humidity_hysteresis)
-            self.fermentor.send_parameters()
+    def update_parameters(self, temperature_target, temperature_hysteresis, humidity_target, humidity_hysteresis):
+        self.fermentor.update_parameters(temperature_target, humidity_target, temperature_hysteresis, humidity_hysteresis)
+        self.fermentor.send_parameters()
         self.init_ranges()
         self.update_shapes = True
         return ""
@@ -368,7 +367,8 @@ class Graph_page:
             State('input-humidity-hysteresis', "value"),
         )
         def update_parameters(n_clicks, temperature_target, temperature_hysteresis, humidity_target, humidity_hysteresis):
-            return self.update_parameters(n_clicks, temperature_target, temperature_hysteresis, humidity_target, humidity_hysteresis)
+            if n_clicks:
+                return self.update_parameters(temperature_target, temperature_hysteresis, humidity_target, humidity_hysteresis)
 
         @app.callback(Output('temperature', 'figure'),
                       Output('humidity', 'figure'),

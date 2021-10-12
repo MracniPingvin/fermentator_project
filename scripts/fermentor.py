@@ -40,10 +40,12 @@ class Fermentor():
                 },
             },
             "state": {
-                "current": "stopped",
-                "default": "stopped"
+                "current": "stop",
+                "default": "stop"
             },
-            "time_left":  datetime.timedelta(seconds=0),
+            "time_left":  {
+                "current": datetime.timedelta(seconds=0),
+            },
         }
         
         self.num_devices = {
@@ -60,13 +62,13 @@ class Fermentor():
             "fan": ["f" + str(i) for i in range(self.num_devices["fan"])],
             "heater": ["he" + str(i) for i in range(self.num_devices["heater"])],
             "moisturizer": ["mo" + str(i) for i in range(self.num_devices["moisturizer"])],
-            "time_left": ["left"],
+            "time_left": ["tl"],
             "time": ["time"],
-            "temperature_hysteresis": ["tHys"],
-            "humidity_hysteresis": ["hHys"],
-            "temperature_target": ["tTar"],
-            "humidity_target": ["hTar"],
-            "state": ["state"]
+            "temperature_hysteresis": ["tH"],
+            "humidity_hysteresis": ["hH"],
+            "temperature_target": ["tT"],
+            "humidity_target": ["hT"],
+            "state": ["st"]
         }
         self.data_to_store = ["temperature", "humidity"]
         self.in_names_reversed = {value: key for key in self.in_names for value in self.in_names[key]}
@@ -105,16 +107,19 @@ class Fermentor():
             "state": lambda x: x
         }
         self.info_functions = {
-            "Initialization completed": self.initialize_arduino
+            "Starting scheduler": self.initialize_arduino,
+            "done": self.disable_send_lock,
         }
         self.state_functions = {
-            "start": lambda x: self.start_fermentation(self.params["time_left"]),
+            "start": lambda x: self.start_fermentation(x),
             "pause": self.stop_fermentation,
             "stop": self.stop_fermentation
         }
         self.measurements_unsaved = []
         self.measurements = []
 
+        self.send_lock = threading.Lock()
+        self.initialized = False
         self.sender_thread = None
         self.receiver_thread = None
         self.io_thread = None
@@ -130,6 +135,9 @@ class Fermentor():
         self.parameters_path = "data/parameters.json"
         self.load_database(self.database_path)
         self.load_parameters(self.parameters_path)
+        self.init_parser()
+        self.init_sender()
+        self.init_receiver()
         self.init_io()
 
     def create_empty_data_block(self):
@@ -167,32 +175,43 @@ class Fermentor():
 
     def update_parameters(self, temperature_target=None, humidity_target=None,
                           temperature_hysteresis=None, humidity_hysteresis=None,
-                          state=None):
+                          state=None, time_left=None):
         try:
-            temperature_target = float(temperature_target)
-            temperature_hysteresis = float(temperature_hysteresis)
-            humidity_target = float(humidity_target)
-            humidity_hysteresis = float(humidity_hysteresis)
-            if temperature_target + temperature_hysteresis > 95:
-                return "TOO HOT TO HANDLE!"
-            if temperature_target - temperature_hysteresis < 0:
-                return "TOO COLD TO HANDLE"
-            if humidity_target + humidity_hysteresis > 100:
-                return "TOO HUMID TO HANDLE!"
-            if humidity_target - humidity_hysteresis < 0:
-                return "TOO DRY TO HANDLE"
+            if temperature_target is not None and temperature_hysteresis is not None:
+                temperature_target = float(temperature_target)
+                temperature_hysteresis = float(temperature_hysteresis)
+                if temperature_target + temperature_hysteresis > 95:
+                    return "TOO HOT TO HANDLE!"
+                if temperature_target - temperature_hysteresis < 0:
+                    return "TOO COLD TO HANDLE"
+            if humidity_hysteresis is not None and humidity_target is not None:
+                humidity_target = float(humidity_target)
+                humidity_hysteresis = float(humidity_hysteresis)
+                if humidity_target + humidity_hysteresis > 100:
+                    return "TOO HUMID TO HANDLE!"
+                if humidity_target - humidity_hysteresis < 0:
+                    return "TOO DRY TO HANDLE"
 
             if temperature_target is not None:
+                temperature_target = float(temperature_target)
                 self.params["temperature"]["target"]["current"] = temperature_target
             if humidity_target is not None:
+                humidity_target = float(humidity_target)
                 self.params["humidity"]["target"]["current"] = humidity_target
             if temperature_hysteresis is not None:
+                temperature_hysteresis = float(temperature_hysteresis)
                 self.params["temperature"]["hysteresis"]["current"] = temperature_hysteresis
             if humidity_hysteresis is not None:
+                humidity_hysteresis = float(humidity_hysteresis)
                 self.params["humidity"]["hysteresis"]["current"] = humidity_hysteresis
             if state is not None:
                 self.params["state"]["current"] = state
-        except:
+            if time_left is not None:
+                self.params["time_left"]["current"] = time_left
+
+        except Exception as e:
+            print("INVALID PARAMETERS")
+            raise e
             return "INVALID PARAMETERS!"
 
 
@@ -216,9 +235,6 @@ class Fermentor():
             self.init_serial("COM3", 9600)
         else:
             self.init_serial("COM3", 9600)
-        self.init_parser()
-        self.init_sender()
-        self.init_receiver()
         while(1):
             time.sleep(5)
             if not self.io_active:
@@ -257,53 +273,56 @@ class Fermentor():
         print("sender_thread_started")
 
     def receiver_function(self):
-        try:
-            while(self.io_active):
-                if self.receiver_serial.in_waiting > 0:
-                    line = self.receiver_serial.readline().decode('utf-8').rstrip()
-                else:
-                    line = None
-                #line = self.generate_fake_message()
-                if line is not None:
-                    self.parse_queue.put(line)
-                    print("received: ", line)
-        except Exception as e:
-            print("receiver error", e)
-            self.io_active = False
+        while True:
+            try:
+                while self.io_active:
+                    if self.receiver_serial.in_waiting > 0:
+                        line = self.receiver_serial.readline().decode('utf-8').rstrip()
+                    else:
+                        line = None
+                    #line = self.generate_fake_message()
+                    if line is not None:
+                        self.parse_queue.put(line)
+                        print("received: ", line)
+                time.sleep(1)
+            except Exception as e:
+                print("receiver error", e)
+                self.clean_io()
+        print("receiver thread ended")
+
 
     def parser_function(self):
-        try:
-            while(self.io_active):
-                try:
+        while True:
+            try:
+                while(self.io_active):
                     data = self.parse_queue.get()
-                except queue.Empty:
-                    data = None
-                    print("KAOOOS")
-                message_list = data.split('|')
-                head = message_list.pop(0)
-                try:
-                    parsed = self.parse_functions[head](message_list)
-                except KeyError:
-                    print("KEY ERROR: head=", head)
-                #print("parsed: ", parsed)
-        except Exception as e:
-            print("parser_error", e)
-            self.io_active = False
-            raise e
+                    message_list = data.split('|')
+                    head = message_list.pop(0)
+                    try:
+                        parsed = self.parse_functions[head](message_list)
+                    except KeyError:
+                        print("KEY ERROR: head=", head)
+                time.sleep(1)
+            except Exception as e:
+                print("parser_error", e)
+                self.clean_io()
+                raise e
+        print("parser thread ended")
 
     def sender_function(self):
-        try:
-            while(self.io_active):
-                try:
+        while True:
+            try:
+                while self.io_active and self.initialized:
                     data = self.send_queue.get()
+                    self.enable_send_lock()
                     self.receiver_serial.write(bytes(data, 'utf-8'))
-                except queue.Empty:
-                    data = None
-                    print("KAOOOS")
-                print("sent: ", data)
-        except Exception as e:
-            print("sender error", e)
-            self.io_active = False
+                    print("sent: " + data)
+                time.sleep(1)
+            except Exception as e:
+                print("sender error", e)
+                self.clean_io()
+        print("sender thread ended")
+
 
     def generate_fake_message(self):
         temperature_string = ""
@@ -348,6 +367,7 @@ class Fermentor():
         self.measurements_unsaved.append(data_block)
         self.measurement_unsaved_count += 1
         self.save_parameters(self.parameters_path)
+        self.update_parameters(state=self.current_data[self.in_names["state"][0]], time_left=self.current_data[self.in_names["time_left"][0]])
         if self.measurement_unsaved_count == self.measurement_unsaved_limit:
             self.update_database(self.database_path, self.save_every_nth_measurement)
             self.measurement_unsaved_count = 0
@@ -384,7 +404,6 @@ class Fermentor():
         self.measurements_unsaved = []
 
     def save_parameters(self, path):
-        parameters_exist = os.path.isfile(path)
         data_block = {}
         for name, value in self.current_data.items():
             data_block[name] = self.encode_functions[self.in_names_reversed[name]](value)
@@ -403,16 +422,19 @@ class Fermentor():
                                    temperature_hysteresis=self.current_data[self.in_names["temperature_hysteresis"][0]],
                                    humidity_target=self.current_data[self.in_names["humidity_target"][0]],
                                    humidity_hysteresis=self.current_data[self.in_names["humidity_hysteresis"][0]],
-                                   state=self.current_data[self.in_names["state"][0]]
+                                   state=self.current_data[self.in_names["state"][0]],
+                                   time_left=self.current_data[self.in_names["time_left"][0]]
                                    )
         else:
             pass
 
-    def send_parameters(self):
+    def clean_io(self):
+        self.io_active = False
+        self.initialized = False
 
+    def send_parameters(self):
         message = self.get_parameter_string()
         self.send_queue.put(message)
-
         return "PARAMETERS UPDATED!"
 
     def start_fermentation(self, n_minutes):
@@ -438,10 +460,15 @@ class Fermentor():
         self.send_queue.put(message)
 
     def initialize_arduino(self):
+        self.initialized = True
         self.send_parameters()
-        self.state_functions[self.params["state"]["current"]]((self.params["time_left"].seconds//60)%60)
+        self.state_functions[self.params["state"]["current"]](self.params["time_left"]["current"].seconds)
 
+    def enable_send_lock(self):
+        self.send_lock.acquire()
 
+    def disable_send_lock(self):
+        self.send_lock.release()
 
     def process_row_before_saving(self, row):
         data_block = self.empty_data_block.copy()
